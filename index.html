@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!DOCTYPE Html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -204,12 +204,30 @@
         .floating-effect {
             animation: bounce 1.5s ease-in-out infinite;
         }
+
+        .alert-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255, 0, 0, 0.5);
+            z-index: 9999;
+            display: none;
+            animation: flashRed 0.5s ease-in-out 2; /* Flash twice */
+        }
+
+        @keyframes flashRed {
+            0% { opacity: 0; }
+            50% { opacity: 1; }
+            100% { opacity: 0; }
+        }
     </style>
 </head>
 <body>
     <div class="game-container">
         <div class="game-header">
-            <h1>🎮 Friends Are Obstacles</h1>
+            <h1>🎮 Friend Jump Game</h1>
             <button class="rules-btn" onclick="showRules()">Rules</button>
         </div>
 
@@ -248,19 +266,23 @@
                 <p><strong>Controls:</strong></p>
                 <ul style="margin-left: 20px;">
                     <li>Press <strong>SPACE</strong> to jump</li>
+                    <li>Click the <strong>canvas</strong> to jump</li>
                     <li>Tap on <strong>mobile</strong> to jump</li>
                 </ul>
                 <br>
                 <p><strong>Gameplay:</strong></p>
                 <ul style="margin-left: 20px;">
-                    <li>🚫 Avoid <strong>your friends</strong> by jumping over them</li>
-                    <li>⭐ Catch <strong>Jaswanth</strong> for <strong>2X score bonus</strong> (lasts for 10 seconds)</li>
-                    <li>📈 Score increases as you survive longer</li>
+                    <li>🚫 Avoid your <strong>friends</strong> by jumping over them</li>
+                    <li>⭐ Catch <strong>Jashu</strong> for <strong>2X score bonus</strong> (10 seconds)</li>
+                    <li>👹 <strong>Boss Phase</strong>: Every 200 points, a 'relaxing' boss phase begins for 7 seconds for the player to chill.</li>
                 </ul>
                 <br>
+                <p style="color: #ff6b6b;"><strong>Tip:</strong> Time your jumps carefully - you can only jump when on the ground!</p>
             </div>
         </div>
     </div>
+
+    <div class="alert-overlay" id="alertOverlay"></div>
 
     <script>
         // HARDCODED IMAGE PATHS - Replace these with your actual image paths
@@ -287,12 +309,13 @@
         let player = {
             x: 80,
             y: 300,
-            width: 55,
-            height: 70,
+            width: 65, // Increased player width
+            height: 80, // Increased player height
             velocityY: 0,
             onGround: true,
             jumping: false,
-            walkFrame: 0
+            walkFrame: 0,
+            jumpDialogue: 0 // For "rightuu" dialogue display
         };
         
         let obstacles = [];
@@ -301,7 +324,6 @@
         let multiplierTimeLeft = 0;
         let gameTime = 0;
         let lastObstacleX = 0;
-        let scoreTimer = 0; // For controlling score increment
         let canSpawnPowerup = true; // Control powerup spawning
         let lastSpeedIncrease = 0; // Track when speed was last increased
         
@@ -309,11 +331,24 @@
         let playerImg = null;
         let obstacleImgs = [];
         let powerupImg = null;
+        let bossImg = null; // Boss image
         
         // Canvas setup
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
+        const alertOverlay = document.getElementById('alertOverlay');
         
+        // Boss phase variables (declared after canvas)
+        let bossPhase = false;
+        let bossPhaseTimer = 0; // Duration of the boss phase
+        let bossSlideIn = 0; // 0 = not sliding, 1 = sliding in, 2 = active, 3 = sliding out
+        let bossX = canvas.width; // Boss starts off-screen
+        let bossWords = []; // Array to store falling words
+        let lastBossPhaseScoreTriggered = 0; // Tracks the score at which the last boss phase was triggered (0, 200, 400, etc.)
+        let bossAlertTriggeredForCycle = false; // New variable to manage alert state for each 200-point cycle
+        let nextBossPhraseIndex = 0; // 0 for "uhhh", 1 for "podu dabaaal"
+        let lastBossWordSpawnX = 0; // Tracks the X position of the last spawned boss word for spacing
+
         // Ground level
         const groundY = 350;
         
@@ -323,7 +358,7 @@
         // Load images with error handling
         function loadImages() {
             // Load player image
-            if (IMAGE_PATHS.player !== 'path/to/player-image.jpg') {
+            if (IMAGE_PATHS.player) {
                 playerImg = new Image();
                 playerImg.onload = function() {
                     console.log('Player image loaded successfully');
@@ -337,7 +372,7 @@
             
             // Load obstacle images
             IMAGE_PATHS.obstacles.forEach((path, index) => {
-                if (path !== `path/to/obstacle${index + 1}.jpg`) {
+                if (path) {
                     const img = new Image();
                     img.onload = function() {
                         console.log(`Obstacle image ${index + 1} loaded successfully`);
@@ -353,7 +388,7 @@
             });
             
             // Load powerup image
-            if (IMAGE_PATHS.powerup !== 'path/to/powerup-image.jpg') {
+            if (IMAGE_PATHS.powerup) {
                 powerupImg = new Image();
                 powerupImg.onload = function() {
                     console.log('Powerup image loaded successfully');
@@ -364,6 +399,17 @@
                 };
                 powerupImg.src = IMAGE_PATHS.powerup;
             }
+            
+            // Load boss image
+            bossImg = new Image();
+            bossImg.onload = function() {
+                    console.log('Boss image loaded successfully');
+                };
+                bossImg.onerror = function() {
+                    console.log('Boss image failed to load, using default');
+                    bossImg = null;
+                };
+            bossImg.src = 'adi.png'; // Assuming 'adi.png' is in the same directory
         }
         
         // Call loadImages on page load
@@ -397,6 +443,7 @@
                 player.velocityY = -16;
                 player.onGround = false;
                 player.jumping = true;
+                player.jumpDialogue = 90; // Show "rightuu" for 90 frames (1.5 seconds)
             }
         }
         
@@ -417,12 +464,24 @@
             lastObstacleX = 0;
             canSpawnPowerup = true;
             lastSpeedIncrease = 0;
+            lastBossPhaseScoreTriggered = 0; // Reset boss phase trigger score
+            bossAlertTriggeredForCycle = false; // Reset alert trigger
+            nextBossPhraseIndex = 0; // Reset phrase index
+            lastBossWordSpawnX = 0; // Reset last boss word spawn X
+            
+            // Reset boss phase
+            bossPhase = false;
+            bossPhaseTimer = 0;
+            bossSlideIn = 0;
+            bossX = canvas.width;
+            bossWords = [];
             
             player.y = groundY - player.height;
             player.velocityY = 0;
             player.onGround = true;
             player.jumping = false;
             player.walkFrame = 0;
+            player.jumpDialogue = 0;
             
             document.getElementById('startBtn').disabled = true;
             document.getElementById('multiplierDisplay').style.display = 'none';
@@ -446,6 +505,17 @@
             lastSpeedIncrease = 0;
             gameSpeed = 5;
             baseGameSpeed = 5;
+            lastBossPhaseScoreTriggered = 0; // Reset boss phase trigger score
+            bossAlertTriggeredForCycle = false; // Reset alert trigger
+            nextBossPhraseIndex = 0; // Reset phrase index
+            lastBossWordSpawnX = 0; // Reset last boss word spawn X
+            
+            // Reset boss phase
+            bossPhase = false;
+            bossPhaseTimer = 0;
+            bossSlideIn = 0;
+            bossX = canvas.width;
+            bossWords = [];
             
             player.y = groundY - player.height;
             player.velocityY = 0;
@@ -496,24 +566,42 @@
         function getMinObstacleSpacing() {
             const difficultyLevel = getDifficultyLevel();
             // Minimum spacing decreases with difficulty but never goes too low
-            const baseSpacing = 200;
+            const baseSpacing = 150;
             const spacingReduction = difficultyLevel * 15;
             return Math.max(baseSpacing - spacingReduction, 120); // Never less than 120 pixels apart
         }
         
         function spawnObstacle() {
+            // Don't spawn obstacles during boss phase
+            if (bossPhase) return;
+            
             const spawnRate = getObstacleSpawnRate();
             const minSpacing = getMinObstacleSpacing();
             const currentX = canvas.width;
             
+            // Special handling for the very first obstacle
+            if (gameScore === 0 && obstacles.length === 0) {
+                obstacles.push({
+                    x: currentX,
+                    y: groundY - 70, // Shorter height
+                    width: 40, // Reduced width
+                    height: 70, // Reduced height
+                    imageIndex: Math.floor(Math.random() * Math.max(1, obstacleImgs.length)),
+                    animFrame: Math.random() * Math.PI * 2,
+                    animSpeed: 0.1 + Math.random() * 0.1
+                });
+                lastObstacleX = currentX;
+                return; // Ensure only this special obstacle spawns initially
+            }
+
             if (Math.random() < spawnRate) {
                 // Check if there's enough space from the last obstacle
                 if (currentX - lastObstacleX >= minSpacing || lastObstacleX === 0) {
                     obstacles.push({
                         x: currentX,
-                        y: groundY - 80,
-                        width: 45,
-                        height: 80,
+                        y: groundY - 100, // Increased height from 80 to 100
+                        width: 60, // Increased width from 45 to 60
+                        height: 100, // Increased height from 80 to 100
                         imageIndex: Math.floor(Math.random() * Math.max(1, obstacleImgs.length)),
                         animFrame: Math.random() * Math.PI * 2, // For dancing animation
                         animSpeed: 0.1 + Math.random() * 0.1 // Varying animation speed
@@ -524,9 +612,11 @@
         }
         
         function spawnPowerup() {
-            // Only spawn if no powerup is active and we can spawn one
-            // Slightly increased spawn rate for more interesting gameplay
-            if (canSpawnPowerup && powerups.length === 0 && Math.random() < 0.002) {
+            // Don't spawn powerups during boss phase
+            if (bossPhase) return;
+            
+            // Much more frequent powerup spawning - only prevent during active multiplier
+            if (powerups.length === 0 && multiplierTimeLeft === 0 && Math.random() < 0.02) {
                 const minY = groundY - 150;
                 const maxY = groundY - 80;
                 
@@ -538,8 +628,6 @@
                     floatOffset: 0,
                     direction: -1
                 });
-                
-                canSpawnPowerup = false; // Prevent more powerups until current effect ends
             }
         }
         
@@ -547,6 +635,11 @@
             // Update walking animation - speed based on game speed
             if (gameRunning && player.onGround) {
                 player.walkFrame += 0.2 + (gameSpeed * 0.02); // Faster animation with higher speed
+            }
+            
+            // Update jump dialogue timer
+            if (player.jumpDialogue > 0) {
+                player.jumpDialogue--;
             }
             
             // Apply gravity
@@ -608,27 +701,148 @@
         }
         
         function isColliding(rect1, rect2) {
-            const margin = 8;
-            return rect1.x + margin < rect2.x + rect2.width - margin &&
-                   rect1.x + rect1.width - margin > rect2.x + margin &&
-                   rect1.y + margin < rect2.y + rect2.height - margin &&
-                   rect1.y + rect1.height - margin > rect2.y + margin;
+            // Standard AABB collision detection without margin for precise hitboxes
+            return rect1.x < rect2.x + rect2.width &&
+                   rect1.x + rect1.width > rect2.x &&
+                   rect1.y < rect2.y + rect2.height &&
+                   rect1.y + rect1.height > rect2.y;
         }
         
         function activateScoreMultiplier() {
             scoreMultiplier = 2;
-            multiplierTimeLeft = 600; // 10 seconds at 60 FPS
+            multiplierTimeLeft = 300; // 5 seconds at 60 FPS (was 600 for 10s)
             document.getElementById('multiplierDisplay').style.display = 'block';
         }
         
+        function checkBossPhase() {
+            // Calculate the target score for the *next* boss phase (e.g., 200, 400, 600)
+            const nextBossTargetScore = lastBossPhaseScoreTriggered + 200;
+            const alertThreshold = nextBossTargetScore - 15;
+
+            // Handle the alert:
+            // Trigger alert if score is within the alert window, alert hasn't been triggered for this cycle, and gameScore is positive
+            if (gameScore >= alertThreshold && gameScore < nextBossTargetScore && !bossAlertTriggeredForCycle && gameScore > 0) {
+                showAlertOverlay();
+                bossAlertTriggeredForCycle = true; // Mark alert as triggered for this specific boss cycle
+            }
+            
+            // Handle starting the boss phase:
+            // Start boss phase if score reaches the exact target score, boss is not already active,
+            // AND the boss phase hasn't already been started for this specific target score.
+            if (gameScore >= nextBossTargetScore && !bossPhase && lastBossPhaseScoreTriggered < nextBossTargetScore) {
+                startBossPhase();
+                lastBossPhaseScoreTriggered = nextBossTargetScore; // Update the score for which boss phase just started
+                bossAlertTriggeredForCycle = false; // Reset alert trigger for the *next* boss cycle
+            }
+        }
+
+        function showAlertOverlay() {
+            alertOverlay.style.display = 'block';
+            setTimeout(() => {
+                alertOverlay.style.display = 'none';
+            }, 1000); // Hide after 1 second
+        }
+        
+        function startBossPhase() {
+            bossPhase = true;
+            bossPhaseTimer = 420; // 7 seconds at 60 FPS (was 900 for 15s)
+            bossSlideIn = 1; // Start sliding in
+            bossX = canvas.width;
+            bossWords = [];
+            nextBossPhraseIndex = 0; // Reset phrase index for alternating words
+            lastBossWordSpawnX = 0; // Reset for new boss phase
+            
+            // Clear existing obstacles and powerups
+            obstacles = [];
+            powerups = [];
+            lastObstacleX = 0;
+            
+            console.log(`Boss phase started at score ${gameScore}`);
+        }
+        
+        function updateBossPhase() {
+            if (!bossPhase) return;
+            
+            // Handle boss sliding animation
+            if (bossSlideIn === 1) {
+                // Slide in from right
+                bossX -= 8;
+                if (bossX <= canvas.width - 300) {
+                    bossX = canvas.width - 300;
+                    bossSlideIn = 2; // Now active
+                }
+            } else if (bossSlideIn === 3) {
+                // Slide out to right
+                bossX += 8;
+                if (bossX >= canvas.width) {
+                    bossPhase = false;
+                    bossSlideIn = 0;
+                    console.log('Boss phase ended');
+                    // Ensure score updates resume after boss phase
+                    scoreTimer = 0; 
+                }
+            }
+            
+            // Update boss phase timer
+            if (bossSlideIn === 2) {
+                bossPhaseTimer--;
+                
+                // Spawn words with uniform spacing
+                const phrases = ['uhhhhhh', 'podu dabaaal'];
+                const currentPhraseText = phrases[nextBossPhraseIndex];
+                // Measure text width using a temporary context or the actual one
+                // Ensure font is set before measuring for accuracy
+                ctx.font = 'bold 14px Arial'; // Match font used in drawBossWords
+                const phraseWidth = ctx.measureText(currentPhraseText).width;
+                const minGap = 100; // Minimum space between phrases in pixels (approx 2-3cm)
+                
+                // Only spawn a new word if there's enough space from the last one
+                // Or if no words are currently on screen
+                if (bossWords.length === 0 || (bossWords[bossWords.length - 1].x + bossWords[bossWords.length - 1].width + minGap) < canvas.width) {
+                    bossWords.push({
+                        text: currentPhraseText,
+                        x: canvas.width, // Start from right edge
+                        y: groundY - 15, // Very low Y position
+                        width: phraseWidth,
+                        height: 25 
+                    });
+                    // No need to update lastBossWordSpawnX as we are checking the last word's actual position
+                    nextBossPhraseIndex = 1 - nextBossPhraseIndex; // Toggle for next phrase
+                }
+                
+                // Update words (now moving left)
+                bossWords.forEach((word, index) => {
+                    word.x -= (gameSpeed * 0.2); // Increased speed for smoother scroll (was 0.3)
+                    
+                    // Remove words that go off screen
+                    if (word.x + word.width < 0) {
+                        bossWords.splice(index, 1);
+                    }
+                });
+
+                // End boss phase when timer runs out
+                if (bossPhaseTimer <= 0) {
+                    bossSlideIn = 3; // Start sliding out
+                }
+            }
+        }
+        
         function updateScore() {
+            if (bossPhase) {
+                scoreTimer = 0; // Halt score during boss phase
+                return; 
+            }
+
             // Score increment - slower for more realistic progression
             scoreTimer++;
             if (scoreTimer >= 8) { // Score increases every 8 frames instead of 4 (much slower)
-                gameScore += Math.floor(scoreMultiplier * 1);
+                gameScore += Math.floor(scoreMultiplier * 1); // Apply multiplier here
                 document.getElementById('gameScore').textContent = gameScore;
                 scoreTimer = 0;
             }
+            
+            // Check for boss phase
+            checkBossPhase();
             
             // Speed increase every 30 points
             const currentSpeedLevel = Math.floor(gameScore / 30);
@@ -648,7 +862,7 @@
                 if (multiplierTimeLeft <= 0) {
                     scoreMultiplier = 1;
                     document.getElementById('multiplierDisplay').style.display = 'none';
-                    canSpawnPowerup = true; // Allow new powerups after effect ends
+                    // Allow new powerups immediately after effect ends
                 }
             }
             
@@ -668,7 +882,8 @@
             
             if (img && img.complete && !img.error && img.naturalWidth > 0) {
                 // Draw the image as the character's head
-                const headSize = Math.min(width, height) * 0.75;
+                // Adjusted head size for player to match obstacles more closely
+                const headSize = isPlayer ? Math.min(width, height) * 0.8 : Math.min(width, height) * 0.75; 
                 const headX = x + (width - headSize) / 2;
                 const headY = y;
                 
@@ -761,6 +976,11 @@
             // Draw player
             drawRobloxCharacter(player.x, player.y, player.width, player.height, playerImg, true);
             
+            // Draw "rightuu" dialogue when jumping
+            if (player.jumpDialogue > 0) {
+                drawDialogue(player.x + player.width/2, player.y - 20, "rightuu");
+            }
+            
             // Draw obstacles with dancing animation
             obstacles.forEach(obstacle => {
                 const img = obstacleImgs[obstacle.imageIndex] || null;
@@ -808,6 +1028,12 @@
                 const cloudX = (Date.now() * 0.05 + i * 300) % (canvas.width + 100) - 50;
                 drawCloud(cloudX, 30 + i * 20);
             }
+            
+            // Draw boss if in boss phase
+            if (bossPhase) {
+                drawBoss();
+                drawBossWords();
+            }
         }
         
         function drawCloud(x, y) {
@@ -819,16 +1045,128 @@
             ctx.fill();
         }
         
+        function drawDialogue(x, y, text) {
+            // Draw speech bubble
+            const bubbleWidth = 80;
+            const bubbleHeight = 30;
+            const bubbleX = x - bubbleWidth/2;
+            const bubbleY = y - bubbleHeight;
+            
+            // Bubble background
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 2;
+            
+            // Rounded rectangle for speech bubble
+            ctx.beginPath();
+            ctx.roundRect(bubbleX, bubbleY, bubbleWidth, bubbleHeight, 10);
+            ctx.fill();
+            ctx.stroke();
+            
+            // Speech bubble tail
+            ctx.beginPath();
+            ctx.moveTo(x - 8, bubbleY + bubbleHeight);
+            ctx.lineTo(x, bubbleY + bubbleHeight + 8);
+            ctx.lineTo(x + 8, bubbleY + bubbleHeight);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            
+            // Text
+            ctx.fillStyle = '#333';
+            ctx.font = 'bold 14px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, x, bubbleY + bubbleHeight/2);
+        }
+        
+        function drawBoss() {
+            // Draw boss image directly without background or red circle
+            const bossSize = 250;
+            const bossY = (canvas.height - bossSize) / 2;
+            
+            if (bossImg && bossImg.complete && !bossImg.error && bossImg.naturalWidth > 0) {
+                ctx.drawImage(bossImg, bossX, bossY, bossSize, bossSize);
+            } else {
+                // Default boss appearance (if image fails to load)
+                ctx.fillStyle = '#8B0000';
+                ctx.fillRect(bossX, bossY, bossSize, bossSize); // Draw a square if image not loaded
+                
+                // Draw angry eyes (only if default is drawn)
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(bossX + 60, bossY + 80, 30, 20);
+                ctx.fillRect(bossX + 160, bossY + 80, 30, 20);
+                
+                ctx.fillStyle = '#000';
+                ctx.fillRect(bossX + 70, bossY + 85, 10, 10);
+                ctx.fillRect(bossX + 170, bossY + 85, 10, 10);
+                
+                // Draw mouth (only if default is drawn)
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(bossX + bossSize/2, bossY + 150, 40, 0, Math.PI);
+                ctx.stroke();
+            }
+            
+            // Draw "BOSS PHASE" text
+            ctx.fillStyle = '#ff0000';
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+            ctx.font = 'bold 24px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            ctx.strokeText('BOSS PHASE', canvas.width/2, 20);
+            ctx.fillText('BOSS PHASE', canvas.width/2, 20);
+            
+            // Draw timer
+            const timeLeft = Math.ceil(bossPhaseTimer / 60);
+            ctx.fillStyle = '#ffff00';
+            ctx.font = 'bold 18px Arial';
+            ctx.fillText(`Time: ${timeLeft}s`, canvas.width/2, 50);
+        }
+        
+        function drawBossWords() {
+            bossWords.forEach(word => {
+                ctx.save();
+                ctx.globalAlpha = 1; // Always opaque for visuals
+                
+                // Draw word with white fill and black stroke
+                ctx.fillStyle = '#FFFFFF'; // White fill
+                ctx.strokeStyle = '#000'; // Black stroke
+                ctx.lineWidth = 2;
+                ctx.font = 'bold 14px Arial'; // Reduced font size for words
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                
+                // Shadow effect
+                ctx.shadowColor = '#000';
+                ctx.shadowBlur = 3;
+                ctx.shadowOffsetX = 2;
+                ctx.shadowOffsetY = 2;
+                
+                ctx.strokeText(word.text, word.x, word.y);
+                ctx.fillText(word.text, word.x, word.y);
+                
+                ctx.restore();
+            });
+        }
+        
         function gameLoop() {
             if (!gameRunning) return;
             
             updatePlayer();
-            updateObstacles();
-            updatePowerups();
-            updateScore();
             
-            spawnObstacle();
-            spawnPowerup();
+            // Update obstacles and powerups only if not in boss phase
+            if (!bossPhase) {
+                updateObstacles();
+                updatePowerups();
+                spawnObstacle();
+                spawnPowerup();
+            }
+            
+            updateBossPhase(); // Boss phase updates independently
+            updateScore(); // Score updates only if not in boss phase, handled inside
             
             drawGame();
             
